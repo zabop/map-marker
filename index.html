@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mapbox Jump</title>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+      }
+      #coordinatesInput {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 1;
+        background: white;
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      #coords {
+        width: 400px; /* Adjust width as needed */
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="coordinatesInput">
+      <label for="coords">Enter Coordinates:</label>
+      <input
+        type="text"
+        id="coords"
+        placeholder="e.g., 7.4508, 44.602; 7.8582, 45.120"
+      />
+      <button onclick="updateCoordinates()">Update</button>
+    </div>
+    <script>
+      mapboxgl.accessToken =
+        "pk.eyJ1IjoiemFib3AiLCJhIjoiY201aWp2ZnB0MHR4aTJsc2duZmhyemdpMyJ9.uzXreBoIG728z9jTHUYwhw";
+
+      let coordinates = [
+        [7.4508, 44.602],
+        [7.8582, 45.12],
+        [-101.4554, 36.9594],
+        [145.2731, -37.87903],
+      ];
+
+      let currentIndex = 0;
+
+      const map = new mapboxgl.Map({
+        container: "map",
+        style: "mapbox://styles/mapbox/satellite-v9",
+        center: coordinates[currentIndex],
+        zoom: 20,
+      });
+
+      map.on("click", (event) => {
+        // Log the coordinates the user clicks on
+        const clickedCoordinates = [event.lngLat.lng, event.lngLat.lat];
+        console.log("User clicked on coordinates:", clickedCoordinates);
+
+        // Jump to the next coordinates in the list
+        currentIndex = (currentIndex + 1) % coordinates.length;
+        map.jumpTo({ center: coordinates[currentIndex], zoom: 20 });
+      });
+
+      function updateCoordinates() {
+        const input = document.getElementById("coords").value;
+        const parsedCoordinates = input.split(";").map((coord) => {
+          const [lon, lat] = coord.trim().split(",").map(Number);
+          return [lon, lat];
+        });
+        if (parsedCoordinates.length > 0) {
+          coordinates = parsedCoordinates;
+          currentIndex = 0; // Reset to the first coordinate
+          map.jumpTo({ center: coordinates[currentIndex], zoom: 20 });
+        } else {
+          alert("Please enter valid coordinates.");
+        }
+      }
+    </script>
+  </body>
+</html>
