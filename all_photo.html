@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Display GeoJSON on Mapbox</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+    <link
+      href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf/turf.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      // Set your Mapbox access token
+      mapboxgl.accessToken =
+        "pk.eyJ1IjoiemFib3AiLCJhIjoiY2xrOHAyZGdjMDFsaDNlbWIyODhhc3VoZSJ9.ldiQmCyhLWNt1-U2jDI3PQ";
+
+      // Initialize the map
+      const map = new mapboxgl.Map({
+        container: "map", // container ID
+        style: "mapbox://styles/mapbox/streets-v12", // Updated to streets-v12 style
+        center: [0, 0], // Starting position [lng, lat]
+        zoom: 2, // Starting zoom level
+      });
+
+      // Load the GeoJSON data from the URL
+      const geojsonUrl =
+        "https://osmlab.github.io/editor-layer-index/imagery.geojson";
+
+      function xyz_prep(elientry) {
+        // if elientry.url does not contain "{-y}", then dsturl = elientry.replace("{zoom}", "{z}").replace("{switch:a,b,c}", "a"), else dsturl = https://tms-y-flip.zabop.workers.dev/?dsturl=uriencode(elientry.url)/{z}/{x}/{y}
+        let dsturl = elientry.url
+          .replace("{zoom}", "{z}")
+          .replace("{switch:a,b,c}", "a");
+
+        if (elientry.url.includes("{-y}")) {
+          dsturl = `https://tms-y-flip.zabop.workers.dev/?dsturl=${encodeURIComponent(
+            elientry.url
+              .replace("&z={zoom}", "")
+              .replace("&x={x}", "")
+              .replace("&y={-y}", "")
+          )}&z={z}&x={x}&y={y}`;
+        }
+
+        console.log("dsturl:");
+        console.log(dsturl);
+        console.log("dsturl^");
+
+        return {
+          type: "raster",
+          tiles: [dsturl],
+          minzoom: elientry.min_zoom ?? 5,
+        };
+      }
+
+      let activeDialog = null; // Track the active dialog
+
+      map.on("load", () => {
+        // Fetch the GeoJSON data and add it to the map
+        fetch(geojsonUrl)
+          .then((response) => response.json())
+          .then((data) => {
+            // Add the GeoJSON data as a source
+            map.addSource("eli", {
+              type: "geojson",
+              data: data,
+            });
+
+            // Add a border layer for polygons
+            map.addLayer({
+              id: "eli-outline",
+              type: "line",
+              source: "eli",
+              paint: {
+                "line-color": "#000",
+                "line-width": 1,
+              },
+              filter: ["all", ["==", ["get", "category"], "photo"]],
+            });
+
+            map.addLayer({
+              id: "eli-fill",
+              type: "fill",
+              source: "eli",
+              paint: {
+                "fill-color": "#0040c0",
+                "fill-opacity": 0.25,
+              },
+              filter: ["all", ["==", ["get", "category"], "photo"]],
+            });
+          })
+          .catch((error) => console.error("Error loading GeoJSON:", error));
+      });
+    </script>
+  </body>
+</html>
