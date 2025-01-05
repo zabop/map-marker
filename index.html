@@ -1,14 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mapbox Jump</title>
-    <script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
+    <meta charset="utf-8" />
+    <title>Display GeoJSON on Mapbox</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <link
-      href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css"
+      href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css"
       rel="stylesheet"
     />
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf/turf.min.js"></script>
     <style>
       body {
         margin: 0;
@@ -20,76 +21,182 @@
         bottom: 0;
         width: 100%;
       }
-      #coordinatesInput {
-        position: absolute;
-        top: 20px;
-        left: 20px;
-        z-index: 1;
-        background: white;
-        padding: 10px;
-        border-radius: 5px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      }
-      #coords {
-        width: 400px; /* Adjust width as needed */
-      }
     </style>
   </head>
   <body>
     <div id="map"></div>
-    <div id="coordinatesInput">
-      <label for="coords">Enter Coordinates:</label>
-      <input
-        type="text"
-        id="coords"
-        placeholder="e.g., 7.4508, 44.602; 7.8582, 45.120"
-      />
-      <button onclick="updateCoordinates()">Update</button>
-    </div>
     <script>
+      // Set your Mapbox access token
       mapboxgl.accessToken =
-        "pk.eyJ1IjoiemFib3AiLCJhIjoiY201aWp2ZnB0MHR4aTJsc2duZmhyemdpMyJ9.uzXreBoIG728z9jTHUYwhw";
+        "pk.eyJ1IjoiemFib3AiLCJhIjoiY2xrOHAyZGdjMDFsaDNlbWIyODhhc3VoZSJ9.ldiQmCyhLWNt1-U2jDI3PQ";
 
-      let coordinates = [
-        [7.4508, 44.602],
-        [7.8582, 45.12],
-        [-101.4554, 36.9594],
-        [145.2731, -37.87903],
-      ];
-
-      let currentIndex = 0;
-
+      // Initialize the map
       const map = new mapboxgl.Map({
-        container: "map",
-        style: "mapbox://styles/mapbox/satellite-v9",
-        center: coordinates[currentIndex],
-        zoom: 20,
+        container: "map", // container ID
+        style: "mapbox://styles/mapbox/streets-v12", // Updated to streets-v12 style
+        center: [0, 0], // Starting position [lng, lat]
+        zoom: 2, // Starting zoom level
       });
 
-      map.on("click", (event) => {
-        // Log the coordinates the user clicks on
-        const clickedCoordinates = [event.lngLat.lng, event.lngLat.lat];
-        console.log("User clicked on coordinates:", clickedCoordinates);
+      // Load the GeoJSON data from the URL
+      const geojsonUrl =
+        "https://osmlab.github.io/editor-layer-index/imagery.geojson";
 
-        // Jump to the next coordinates in the list
-        currentIndex = (currentIndex + 1) % coordinates.length;
-        map.jumpTo({ center: coordinates[currentIndex], zoom: 20 });
-      });
+      function xyz_prep(elientry) {
+        // if elientry.url does not contain "{-y}", then dsturl = elientry.replace("{zoom}", "{z}").replace("{switch:a,b,c}", "a"), else dsturl = https://tms-y-flip.zabop.workers.dev/?dsturl=uriencode(elientry.url)/{z}/{x}/{y}
+        let dsturl = elientry.url
+          .replace("{zoom}", "{z}")
+          .replace("{switch:a,b,c}", "a");
 
-      function updateCoordinates() {
-        const input = document.getElementById("coords").value;
-        const parsedCoordinates = input.split(";").map((coord) => {
-          const [lon, lat] = coord.trim().split(",").map(Number);
-          return [lon, lat];
-        });
-        if (parsedCoordinates.length > 0) {
-          coordinates = parsedCoordinates;
-          currentIndex = 0; // Reset to the first coordinate
-          map.jumpTo({ center: coordinates[currentIndex], zoom: 20 });
-        } else {
-          alert("Please enter valid coordinates.");
+        if (elientry.url.includes("{-y}")) {
+          dsturl = `https://tms-y-flip.zabop.workers.dev/?dsturl=${encodeURIComponent(
+            elientry.url
+              .replace("&z={zoom}", "")
+              .replace("&x={x}", "")
+              .replace("&y={-y}", "")
+          )}&z={z}&x={x}&y={y}`;
         }
+
+        console.log("dsturl:");
+        console.log(dsturl);
+        console.log("dsturl^");
+
+        return {
+          type: "raster",
+          tiles: [dsturl],
+          minzoom: elientry.min_zoom ?? 5,
+        };
       }
+
+      let activeDialog = null; // Track the active dialog
+
+      map.on("load", () => {
+        // Fetch the GeoJSON data and add it to the map
+        fetch(geojsonUrl)
+          .then((response) => response.json())
+          .then((data) => {
+            // Add the GeoJSON data as a source
+            map.addSource("eli", {
+              type: "geojson",
+              data: data,
+            });
+
+            // Add a border layer for polygons
+            map.addLayer({
+              id: "eli-outline",
+              type: "line",
+              source: "eli",
+              paint: {
+                "line-color": "#000",
+                "line-width": 1,
+              },
+              filter: [
+                "all",
+                ["==", ["get", "category"], "photo"],
+                ["==", ["get", "type"], "tms"],
+                // ["!", ["in", "{-y}", ["get", "url"]]],
+              ],
+            });
+
+            map.addLayer({
+              id: "eli-fill",
+              type: "fill",
+              source: "eli",
+              paint: {
+                "fill-color": "#0040c0",
+                "fill-opacity": 0.25,
+              },
+              filter: [
+                "all",
+                ["==", ["get", "category"], "photo"],
+                ["==", ["get", "type"], "tms"],
+                // ["!", ["in", "{-y}", ["get", "url"]]],
+              ],
+            });
+
+            // Handle polygon click
+            map.on("click", (e) => {
+              // Remove the existing dialog if present
+              if (activeDialog) {
+                document.body.removeChild(activeDialog);
+                activeDialog = null;
+              }
+
+              const features = map.queryRenderedFeatures(e.point, {
+                layers: ["eli-fill"],
+              });
+
+              if (features.length > 0) {
+                const sortedFeatures = features.slice().sort((a, b) => {
+                  const areaA = turf.area(a);
+                  const areaB = turf.area(b);
+                  return areaA - areaB;
+                });
+
+                // Reverse for descending order (largest first)
+                sortedFeatures.reverse();
+
+                const layerOptions = sortedFeatures.map((feature, index) => {
+                  return {
+                    name: feature.properties.name || `Layer ${index + 1}`,
+                    source: `xyz-layer-source-${index}`,
+                    layer: `xyz-layer-${index}`,
+                    properties: feature.properties,
+                  };
+                });
+
+                // Display a dialog for the user to select the layer
+                const layerNames = layerOptions.map(
+                  (option, i) =>
+                    `<li><button onclick="loadLayer(${i})">${option.name}</button></li>`
+                );
+
+                const dialog = document.createElement("div");
+                dialog.style.position = "absolute";
+                dialog.style.background = "white";
+                dialog.style.padding = "10px";
+                dialog.style.border = "1px solid black";
+                dialog.style.zIndex = 1000;
+                dialog.style.top = `${e.point.y}px`;
+                dialog.style.left = `${e.point.x}px`;
+
+                dialog.innerHTML = `<h3>Select a layer to load:</h3><ul>${layerNames.join(
+                  ""
+                )}</ul>`;
+                document.body.appendChild(dialog);
+
+                // Track the active dialog
+                activeDialog = dialog;
+
+                // Function to load the selected layer
+                window.loadLayer = (index) => {
+                  const option = layerOptions[index];
+                  const sourceId = option.source;
+                  const layerId = option.layer;
+
+                  // Add the source and layer to the map
+                  map.addSource(sourceId, xyz_prep(option.properties));
+
+                  map.addLayer({
+                    id: layerId,
+                    type: "raster",
+                    source: sourceId,
+                    paint: {},
+                  });
+
+                  // Remove the dialog after selection
+                  if (activeDialog) {
+                    document.body.removeChild(activeDialog);
+                    activeDialog = null;
+                  }
+                };
+              } else {
+                console.log("No feature clicked");
+              }
+            });
+          })
+          .catch((error) => console.error("Error loading GeoJSON:", error));
+      });
     </script>
   </body>
 </html>
